@@ -1,5 +1,7 @@
 require 'gosu'
 
+Gosu::Color::PURPLE = Gosu::Color.new 0xFF7A00BE
+
 class Zombies
   VERSION = '1.0.0'
 
@@ -10,11 +12,15 @@ class Zombies
 end
 
 class GameWindow < Gosu::Window
-  W, H, FULL = Gosu::screen_width, Gosu::screen_height, true
-  # W, H, FULL = 800, 600, false
-  PEOPLE = 100
-  SIGHT = 50
-  SMELL = 25
+  if true then
+    W, H, FULL = Gosu::screen_width, Gosu::screen_height, true
+  else
+    W, H, FULL = 800, 600, false
+  end
+
+  PEOPLE   = 300
+  WARRIORS = 5
+  ZOMBIES  = 2
 
   attr_reader :people
   attr_reader :humans
@@ -33,7 +39,13 @@ class GameWindow < Gosu::Window
       people << Person.new(self)
     end
 
-    people.last.infect!
+    ZOMBIES.times do
+      people[rand people.size].infect!
+    end
+
+    WARRIORS.times do
+      people[rand people.size].extend Warrior
+    end
 
     humans.push(*people[0..-2])
   end
@@ -48,16 +60,9 @@ class GameWindow < Gosu::Window
   def update
     people.each do |p|
       p.move
-
-      if p.infected? then
-        visible = humans.find_all { |op| p - op < SIGHT }
-        visible.each { |op| op.panic! }
-        p.neighbors = visible.find_all { |op| p - op < SMELL }.
-          sort_by { |op| p - op }
-      end
     end unless paused?
 
-    self.paused = true if humans.empty?
+    self.paused = true if humans.empty? or not people.any? { |p| Zombie === p }
   end
 
   def draw
@@ -80,25 +85,17 @@ class GameWindow < Gosu::Window
   end
 end
 
-class Numeric
-  def limit_to min, max
-    [min, [self, max].min].max
-  end
-end
-
 class Person
   W, H, V, DA = 10, 10, 2, 30
   W2, H2, DA2 = W/2, H/2, DA/2
 
-  attr_accessor :x, :y, :v, :a, :neighbors
   attr_reader :window
-  attr_accessor :infected, :panicked
-  alias :infected? :infected
+  attr_accessor :x, :y, :v, :a, :neighbors, :panicked
   alias :panicked? :panicked
 
   def initialize window
     @window = window
-    @infected = @panicked = false
+    @panicked = false
     @neighbors = []
 
     self.x = rand window.width
@@ -107,34 +104,44 @@ class Person
     self.v, self.a = V, rand(360)
   end
 
-  def move
-    if infected? then
-      if neighbors.empty? then
-        self.a += rand(DA) - DA2
-      else
-        neighbors.each do |op|
-          op.infect! if touching? op
-        end
+  def sight
+    50
+  end
 
-        closest = neighbors.first
-        self.a = Gosu::angle(x, y, closest.x, closest.y)
-      end
-    elsif panicked? then
-      self.a += rand(2*DA) - DA
-      self.panicked -= 1
-      self.calm! if panicked == 0
+  def da;  DA; end
+  def da2; DA2; end
+  def w2;  W2; end
+  def h2;  H2; end
+
+  def _move
+    dx, dy = Gosu::offset_x(a, v), Gosu::offset_y(a, v)
+    self.x = (x + dx).limit_to(0, window.width  - w2)
+    self.y = (y + dy).limit_to(0, window.height - h2)
+  end
+
+  def move
+    if panicked? then
+      panic
     else
-      self.a += rand(DA) - DA2
+      self.a += rand(da) - da2
       self.a = Gosu::angle(x, y, window.width/2, window.height/2) if near_edge?
     end
 
-    dx, dy = Gosu::offset_x(a, v), Gosu::offset_y(a, v)
-    self.x = (x + dx).limit_to(0, window.width  - W2)
-    self.y = (y + dy).limit_to(0, window.height - H2)
+    _move
+  end
+
+  def panic
+    self.a += rand(2*da) - da
+    self.panicked -= 1
+    self.calm! if self.panicked == 0
   end
 
   def draw
     window.rect l, t, r, b, color
+
+    # c = Gosu::Color::BLUE
+    # dx, dy = Gosu.offset_x(a, w2), Gosu.offset_y(a, h2)
+    # window.draw_line x, y, c, x+dx, y+dy, c
   end
 
   def - o
@@ -142,13 +149,11 @@ class Person
   end
 
   def infect!
-    self.infected = true
-    self.v = V / 2
     window.humans.delete self
+    extend Zombie
   end
 
   def panic!
-    return if infected?
     self.panicked = 10
     self.v = V * 2
   end
@@ -168,19 +173,113 @@ class Person
   def b; y + H2; end
 
   def near_edge?
-    ( l < W2 or
-      t < H2 or
-      r > window.width - W2 or
-      b > window.height - H2 )
+    ( l < w2 or
+      t < h2 or
+      r > window.width - w2 or
+      b > window.height - h2 )
   end
 
   def color
-    if infected? then
-      Gosu::Color::RED
-    elsif panicked? then
+    if panicked? then
       Gosu::Color::YELLOW
     else
-      Gosu::Color::WHITE
+      Gosu::Color::GRAY
     end
+  end
+end
+
+module Zombie
+  def panic!
+    # no brains... no panic
+  end
+
+  def color
+    if neighbors.empty?
+      Gosu::Color::RED
+    else
+      Gosu::Color::PURPLE
+    end
+  end
+
+  def move
+    visible = window.humans.find_all { |op| self - op < op.sight }
+    visible.each { |op| op.panic! } # FIX: this should be pull, not push
+
+    self.neighbors.replace visible.find_all { |op|
+      not Zombie === op and self - op < self.sight # think "smell"
+    }.sort_by { |op| self - op }
+
+    if neighbors.empty? then
+      self.a += rand(da) - da2
+    else
+      neighbors.each do |op|
+        break unless touching? op
+        op.infect!
+      end
+
+      closest = neighbors.first
+      self.a = Gosu::angle(x, y, closest.x, closest.y)
+    end
+
+    _move
+  end
+
+  def sight # more like smell
+    super / 2
+  end
+
+  def v
+    super / 2
+  end
+end
+
+module Warrior
+  def color
+    Gosu::Color::WHITE
+  end
+
+  def sight
+    100
+  end
+
+  def v
+    super * 1.25
+  end
+
+  def panic!
+    # um... no
+  end
+
+  def infect!
+    @hp ||= 50
+    @hp -= 1
+    super if @hp == 0
+  end
+
+  def move
+    self.neighbors.replace window.people.find_all { |op|
+      Zombie === op and self - op < self.sight
+    }.sort_by { |op| self - op }
+
+    if neighbors.empty? then
+      self.a += rand(da) - da2
+      self.a = Gosu::angle(x, y, window.width/2, window.height/2) if near_edge?
+    else
+      closest = neighbors.first
+      self.a = Gosu::angle(x, y, closest.x, closest.y)
+    end
+
+    neighbors.each do |op|
+      break unless touching? op
+      window.people.delete op
+    end
+
+    _move
+  end
+end
+
+class Numeric
+  def limit_to min, max
+    [min, [self, max].min].max
   end
 end
