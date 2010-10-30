@@ -1,0 +1,9 @@
+#!/usr/bin/env ruby
+
+dir = "tmp/isolate/ruby-1.8"
+ENV['GEM_PATH'] = dir if File.directory? dir
+
+require 'rubygems'
+require 'zombies'
+
+Zombies.run
