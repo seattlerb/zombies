@@ -2,30 +2,32 @@ require 'gosu'
 
 Gosu::Color::PURPLE = Gosu::Color.new 0xFF7A00BE
 
-class Zombies
+class Zombies < Gosu::Window
   VERSION = '1.0.0'
 
-  def self.run
-    window = GameWindow.new
-    window.show
-  end
-end
-
-class GameWindow < Gosu::Window
   if true then
     W, H, FULL = Gosu::screen_width, Gosu::screen_height, true
   else
     W, H, FULL = 800, 600, false
   end
 
-  PEOPLE   = 300
-  WARRIORS = 5
-  ZOMBIES  = 2
+  PEOPLE  = 300
+  PRIESTS =  10
+  ZOMBIES =   5
+
+  PEOPLE_SIGHT = 50
+  ZOMBIE_SIGHT = 25
+  PRIEST_SIGHT = 100
 
   attr_reader :people
   attr_reader :humans
   attr_accessor :paused
   alias :paused? :paused
+
+  def self.run
+    window = Zombies.new
+    window.show
+  end
 
   def initialize
     @people, @humans = [], []
@@ -43,8 +45,8 @@ class GameWindow < Gosu::Window
       people[rand people.size].infect!
     end
 
-    WARRIORS.times do
-      people[rand people.size].extend Warrior
+    PRIESTS.times do
+      people[rand people.size].fight!
     end
 
     humans.push(*people[0..-2])
@@ -105,7 +107,7 @@ class Person
   end
 
   def sight
-    50
+    Zombies::PEOPLE_SIGHT
   end
 
   def da;  DA; end
@@ -151,6 +153,10 @@ class Person
   def infect!
     window.humans.delete self
     extend Zombie
+  end
+
+  def fight!
+    extend Priest
   end
 
   def panic!
@@ -225,7 +231,7 @@ module Zombie
   end
 
   def sight # more like smell
-    super / 2
+    Zombies::ZOMBIE_SIGHT
   end
 
   def v
@@ -233,13 +239,13 @@ module Zombie
   end
 end
 
-module Warrior
+module Priest
   def color
     Gosu::Color::WHITE
   end
 
   def sight
-    100
+    Zombies::PRIEST_SIGHT
   end
 
   def v
