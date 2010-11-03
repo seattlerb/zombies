@@ -9,12 +9,14 @@ class Zombies < Gosu::Window
     W, H, FULL = Gosu::screen_width, Gosu::screen_height, true
   end
 
-  PEOPLE  = 300
-  PRIESTS =  10
-  ZOMBIES =   5
+  # Tweakables:
 
+  PEOPLE       = $DEBUG ? 100 : 200
+  PRIESTS      = 5
+  ZOMBIES      = 5
+  BULLY_LIMIT  = 5
   PERSON_SIGHT = 50
-  ZOMBIE_SIGHT = 25
+  ZOMBIE_SIGHT = 40
   PRIEST_SIGHT = 100
 
   attr_reader :people
@@ -55,22 +57,18 @@ class Zombies < Gosu::Window
     people.replace people.sort_by { rand }
   end
 
-  def draw_rect x1, y1, x2, y2, c
-    draw_quad(x1, y1, c,
-              x2, y1, c,
-              x1, y2, c,
-              x2, y2, c)
+  def priests myself = nil, &b
+    result = people.grep Priest
+    result.delete myself if myself
+    result = result.find_all(&b) if b
+    result
   end
 
-  def draw_circle x, y, r, c
-    xx, yy = Gosu.offset_xy 0, r
-
-    (0..360).step(20) do |a|
-      next if a == 0
-      dx, dy = Gosu.offset_xy a, r
-      draw_line x+xx, y+yy, c, x+dx, y+dy, c
-      xx, yy = dx, dy
-    end
+  def zombies myself = nil, &b
+    result = people.grep Zombie
+    result.delete myself if myself
+    result = result.find_all(&b) if b
+    result
   end
 
   def calculate_fps
@@ -130,12 +128,14 @@ class Person
 
   attr_reader :window
   attr_accessor :x, :y, :v, :a, :neighbors, :panicked
+  attr_accessor :chases
   alias :panicked? :panicked
 
   def initialize window, x = nil, y = nil
     @window = window
     @panicked = false
     @neighbors = []
+    @chases = 0
 
     self.x = x || rand(window.width)
     self.y = y || rand(window.height)
@@ -205,6 +205,8 @@ class Person
   def calm!
     self.panicked = false
     self.v = V
+    self.chases += 1
+    self.fight! if chases > Zombies::BULLY_LIMIT
   end
 
   def touching? o
@@ -260,7 +262,8 @@ module Zombie
     visible.each { |op| op.panic! } # FIX: this should be pull, not push
 
     self.neighbors.replace visible.find_all { |op|
-      not Zombie === op and self - op < self.sight # think "smell"
+      # not Zombie === op and
+      self - op < self.sight # think "smell"
     }.sort_by { |op| self - op }
   end
 
@@ -328,17 +331,22 @@ module Priest
   end
 
   def update_neighbors
-    self.neighbors.replace window.people.find_all { |op|
-      Zombie === op and self - op < self.sight
-    }.sort_by { |op| self - op }
+    self.neighbors.replace window.zombies { |op| self - op < self.sight }.
+      sort_by { |op| self - op }
   end
 
   def update
     update_neighbors
 
     if neighbors.empty? then
-      self.a += rand(da) - da2
-      self.a = Gosu::angle(x, y, window.width/2, window.height/2) if near_edge?
+      self.a =
+        if near_edge? then
+          Gosu::angle(x, y, window.width/2, window.height/2)
+        elsif op = window.priests(self) { |op| self - op < self.sight }.first
+          Gosu::angle(op.x, op.y, x, y)
+        else
+          self.a + rand(da) - da2
+        end
     else
       closest = neighbors.first
       self.a = Gosu::angle(x, y, closest.x, closest.y)
@@ -369,6 +377,26 @@ module Gosu
 
   def self.offset_xy a, r
     return Gosu::offset_x(a, r), Gosu::offset_y(a, r)
+  end
+
+  class Window
+    def draw_rect x1, y1, x2, y2, c
+      draw_quad(x1, y1, c,
+                x2, y1, c,
+                x1, y2, c,
+                x2, y2, c)
+    end
+
+    def draw_circle x, y, r, c
+      xx, yy = Gosu.offset_xy 0, r
+
+      (0..360).step(20) do |a|
+        next if a == 0
+        dx, dy = Gosu.offset_xy a, r
+        draw_line x+xx, y+yy, c, x+dx, y+dy, c
+        xx, yy = dx, dy
+      end
+    end
   end
 end
 
