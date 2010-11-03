@@ -185,7 +185,7 @@ class Person
   end
 
   def - o
-    Gosu.distance(x, y, o.x, o.y)
+    Gosu.distance x, y, o.x, o.y
   end
 
   def infect!
@@ -215,6 +215,11 @@ class Person
   def l; x - W2; end
   def t; y - H2; end
   def b; y + H2; end
+
+  def tl; [l, t]; end
+  def tr; [r, t]; end
+  def bl; [l, b]; end
+  def br; [r, b]; end
 
   def near_edge?
     ( l < w2 or

@@ -2,6 +2,9 @@
 
 require 'autotest/restart'
 
+dir = "tmp/isolate/ruby-1.8"
+ENV['GEM_PATH'] = dir if File.directory? dir
+
 Autotest.add_hook :initialize do |at|
   at.testlib = "minitest/autorun"
   at.add_exception 'tmp'
