@@ -11,7 +11,7 @@ Hoe.spec 'zombies' do
 
   self.rubyforge_name = 'seattlerb'
 
-  extra_deps << ["gosu", "~> 0.7.24"]
+  extra_deps << ["gosu", "~> 0.7.25"]
 end
 
 # vim: syntax=ruby

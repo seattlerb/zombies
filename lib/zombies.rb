@@ -1,21 +1,22 @@
 require 'gosu'
 
-Gosu::Color::PURPLE = Gosu::Color.new 0xFF7A00BE
+Gosu::Color::PURPLE     = Gosu::Color.new 0xFF7A00BE
+Gosu::Color::DARK_GREEN = Gosu::Color.new 0xff006600
 
 class Zombies < Gosu::Window
   VERSION = '1.0.0'
 
-  if true then
-    W, H, FULL = Gosu::screen_width, Gosu::screen_height, true
-  else
+  if $DEBUG then
     W, H, FULL = 800, 600, false
+  else
+    W, H, FULL = Gosu::screen_width, Gosu::screen_height, true
   end
 
   PEOPLE  = 300
   PRIESTS =  10
   ZOMBIES =   5
 
-  PEOPLE_SIGHT = 50
+  PERSON_SIGHT = 50
   ZOMBIE_SIGHT = 25
   PRIEST_SIGHT = 100
 
@@ -41,15 +42,18 @@ class Zombies < Gosu::Window
       people << Person.new(self)
     end
 
-    ZOMBIES.times do
-      people[rand people.size].infect!
+    people[0...ZOMBIES].each do |person|
+      person.infect!
     end
 
-    PRIESTS.times do
-      people[rand people.size].fight!
+    people[ZOMBIES...ZOMBIES+PRIESTS].each do |person|
+      person.fight!
     end
 
-    humans.push(*people[0..-2])
+    humans.push(*people[ZOMBIES+PRIESTS..-1])
+
+    # randomize them so that priest/zombie battles are even
+    people.replace people.sort_by { rand }
   end
 
   def rect x1, y1, x2, y2, c
@@ -75,15 +79,29 @@ class Zombies < Gosu::Window
 
   def button_down id
     case id
-    when Gosu::KbEscape then
+    when Gosu::KbD, Gosu::KbH then
+      $DEBUG = ! $DEBUG
+    when Gosu::KbEscape, Gosu::KbX then
       close
     when Gosu::KbSpace then
       self.paused = ! self.paused
+    when Gosu::MsLeft then
+      if paused? then
+        fake = Person.new(self, mouse_x, mouse_y)
+        hits = people.find_all { |p| (fake - p).abs < fake.w }
+        p hits
+        p :people => hits.map { |p| people.index(p) }
+        p :humans => hits.map { |p| humans.index(p) }
+      end
     end
   end
 
-  def needs_redraw?
-    not paused?
+  # def needs_redraw?
+  #   not paused?
+  # end
+
+  def needs_cursor?
+    paused?
   end
 end
 
@@ -95,25 +113,26 @@ class Person
   attr_accessor :x, :y, :v, :a, :neighbors, :panicked
   alias :panicked? :panicked
 
-  def initialize window
+  def initialize window, x = nil, y = nil
     @window = window
     @panicked = false
     @neighbors = []
 
-    self.x = rand window.width
-    self.y = rand window.height
+    self.x = x || rand(window.width)
+    self.y = y || rand(window.height)
 
     self.v, self.a = V, rand(360)
   end
 
   def sight
-    Zombies::PEOPLE_SIGHT
+    Zombies::PERSON_SIGHT
   end
 
-  def da;  DA; end
+  def da;  DA;  end
   def da2; DA2; end
-  def w2;  W2; end
-  def h2;  H2; end
+  def w;   W;   end
+  def w2;  W2;  end
+  def h2;  H2;  end
 
   def _move
     dx, dy = Gosu::offset_x(a, v), Gosu::offset_y(a, v)
@@ -139,11 +158,25 @@ class Person
   end
 
   def draw
-    window.rect l, t, r, b, color
+    # window.rect l, t, r, b, color
+    c = self.color
+    window.draw_quad(l, t, c,
+                     r, t, c,
+                     r, b, c,
+                     l, b, c)
 
     # c = Gosu::Color::BLUE
     # dx, dy = Gosu.offset_x(a, w2), Gosu.offset_y(a, h2)
     # window.draw_line x, y, c, x+dx, y+dy, c
+  end
+
+  def draw_sight
+    c = Gosu::Color::GRAY
+    sight = self.sight
+    window.draw_line(x-sight, y-sight, c, x-sight, y+sight, c)
+    window.draw_line(x-sight, y+sight, c, x+sight, y+sight, c)
+    window.draw_line(x+sight, y+sight, c, x+sight, y-sight, c)
+    window.draw_line(x+sight, y-sight, c, x-sight, y-sight, c)
   end
 
   def - o
@@ -195,13 +228,18 @@ class Person
 end
 
 module Zombie
+  def draw
+    super
+    draw_sight if $DEBUG
+  end
+
   def panic!
     # no brains... no panic
   end
 
   def color
     if neighbors.empty?
-      Gosu::Color::RED
+      Gosu::Color::DARK_GREEN
     else
       Gosu::Color::PURPLE
     end
@@ -237,11 +275,24 @@ module Zombie
   def v
     super / 2
   end
+
+  def inspect
+    super.gsub(/Person/, 'Zombie')
+  end
 end
 
 module Priest
+  def draw
+    super
+    draw_sight if $DEBUG
+  end
+
   def color
-    Gosu::Color::WHITE
+    if neighbors.empty?
+      Gosu::Color::WHITE
+    else
+      Gosu::Color::RED
+    end
   end
 
   def sight
@@ -281,6 +332,10 @@ module Priest
     end
 
     _move
+  end
+
+  def inspect
+    super.gsub(/Person/, 'Priest')
   end
 end
 
