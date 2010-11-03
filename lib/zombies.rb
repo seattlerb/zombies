@@ -1,8 +1,5 @@
 require 'gosu'
 
-Gosu::Color::PURPLE     = Gosu::Color.new 0xFF7A00BE
-Gosu::Color::DARK_GREEN = Gosu::Color.new 0xff006600
-
 class Zombies < Gosu::Window
   VERSION = '1.0.0'
 
@@ -31,6 +28,8 @@ class Zombies < Gosu::Window
   end
 
   def initialize
+    @t0 = Gosu.milliseconds
+    @fps = FPSCounter.new
     @people, @humans = [], []
     @paused = false
 
@@ -50,22 +49,46 @@ class Zombies < Gosu::Window
       person.fight!
     end
 
-    humans.push(*people[ZOMBIES+PRIESTS..-1])
+    humans.push(*people[ZOMBIES..-1])
 
     # randomize them so that priest/zombie battles are even
     people.replace people.sort_by { rand }
   end
 
-  def rect x1, y1, x2, y2, c
+  def draw_rect x1, y1, x2, y2, c
     draw_quad(x1, y1, c,
               x2, y1, c,
               x1, y2, c,
               x2, y2, c)
   end
 
+  def draw_circle x, y, r, c
+    xx, yy = Gosu.offset_xy 0, r
+
+    (0..360).step(20) do |a|
+      next if a == 0
+      dx, dy = Gosu.offset_xy a, r
+      draw_line x+xx, y+yy, c, x+dx, y+dy, c
+      xx, yy = dx, dy
+    end
+  end
+
+  def calculate_fps
+    return if paused?
+
+    @fps.register_tick
+    t1 = Gosu.milliseconds / 2000
+    if t1 != @t0 then
+      p @fps.fps
+      @t0 = t1
+    end
+  end
+
   def update
+    calculate_fps
+
     people.each do |p|
-      p.move
+      p.update
     end unless paused?
 
     self.paused = true if humans.empty? or not people.any? { |p| Zombie === p }
@@ -95,10 +118,6 @@ class Zombies < Gosu::Window
       end
     end
   end
-
-  # def needs_redraw?
-  #   not paused?
-  # end
 
   def needs_cursor?
     paused?
@@ -134,13 +153,13 @@ class Person
   def w2;  W2;  end
   def h2;  H2;  end
 
-  def _move
-    dx, dy = Gosu::offset_x(a, v), Gosu::offset_y(a, v)
+  def move
+    dx, dy = Gosu.offset_xy a, v
     self.x = (x + dx).limit_to(0, window.width  - w2)
     self.y = (y + dy).limit_to(0, window.height - h2)
   end
 
-  def move
+  def update
     if panicked? then
       panic
     else
@@ -148,7 +167,7 @@ class Person
       self.a = Gosu::angle(x, y, window.width/2, window.height/2) if near_edge?
     end
 
-    _move
+    move
   end
 
   def panic
@@ -158,25 +177,11 @@ class Person
   end
 
   def draw
-    # window.rect l, t, r, b, color
-    c = self.color
-    window.draw_quad(l, t, c,
-                     r, t, c,
-                     r, b, c,
-                     l, b, c)
-
-    # c = Gosu::Color::BLUE
-    # dx, dy = Gosu.offset_x(a, w2), Gosu.offset_y(a, h2)
-    # window.draw_line x, y, c, x+dx, y+dy, c
+    window.draw_rect l, t, r, b, color
   end
 
   def draw_sight
-    c = Gosu::Color::GRAY
-    sight = self.sight
-    window.draw_line(x-sight, y-sight, c, x-sight, y+sight, c)
-    window.draw_line(x-sight, y+sight, c, x+sight, y+sight, c)
-    window.draw_line(x+sight, y+sight, c, x+sight, y-sight, c)
-    window.draw_line(x+sight, y-sight, c, x-sight, y-sight, c)
+    window.draw_circle x, y, sight, Gosu::Color::GRAY
   end
 
   def - o
@@ -245,13 +250,17 @@ module Zombie
     end
   end
 
-  def move
+  def update_neighbors
     visible = window.humans.find_all { |op| self - op < op.sight }
     visible.each { |op| op.panic! } # FIX: this should be pull, not push
 
     self.neighbors.replace visible.find_all { |op|
       not Zombie === op and self - op < self.sight # think "smell"
     }.sort_by { |op| self - op }
+  end
+
+  def update
+    update_neighbors
 
     if neighbors.empty? then
       self.a += rand(da) - da2
@@ -265,7 +274,7 @@ module Zombie
       self.a = Gosu::angle(x, y, closest.x, closest.y)
     end
 
-    _move
+    move
   end
 
   def sight # more like smell
@@ -313,10 +322,14 @@ module Priest
     super if @hp == 0
   end
 
-  def move
+  def update_neighbors
     self.neighbors.replace window.people.find_all { |op|
       Zombie === op and self - op < self.sight
     }.sort_by { |op| self - op }
+  end
+
+  def update
+    update_neighbors
 
     if neighbors.empty? then
       self.a += rand(da) - da2
@@ -331,7 +344,7 @@ module Priest
       window.people.delete op
     end
 
-    _move
+    move
   end
 
   def inspect
@@ -342,5 +355,34 @@ end
 class Numeric
   def limit_to min, max
     [min, [self, max].min].max
+  end
+end
+
+module Gosu
+  Color::PURPLE     = Gosu::Color.new 0xFF7A00BE
+  Color::DARK_GREEN = Gosu::Color.new 0xff006600
+
+  def self.offset_xy a, r
+    return Gosu::offset_x(a, r), Gosu::offset_y(a, r)
+  end
+end
+
+class FPSCounter
+  attr_reader :fps
+
+  def initialize
+    @current_second = Gosu::milliseconds / 1000
+    @accum_fps = 0
+    @fps = 0
+  end
+
+  def register_tick
+    @accum_fps += 1
+    current_second = Gosu::milliseconds / 1000
+    if current_second != @current_second
+      @current_second = current_second
+      @fps = @accum_fps
+      @accum_fps = 0
+    end
   end
 end
