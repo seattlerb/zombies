@@ -1,26 +1,14 @@
 = zombies
 
-* FIX (url)
+* http://seattlerb.rubyforge.org/
 
 == DESCRIPTION:
 
-FIX (describe your package)
-
-== FEATURES/PROBLEMS:
-
-* FIX (list of features or problems)
-
-== SYNOPSIS:
-
-  FIX (code sample of usage)
+A toy zombie epidemic simulator using gosu.
 
 == REQUIREMENTS:
 
-* FIX (list of requirements)
-
-== INSTALL:
-
-* sudo gem install zombies
+* gosu
 
 == LICENSE:
 
