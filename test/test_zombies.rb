@@ -1,4 +1,5 @@
 require "minitest/autorun"
+require "minitest/benchmark" if ENV['BENCH']
 require "zombies"
 require "set"
 
@@ -6,6 +7,8 @@ class SpatialHash < Array
   attr_reader :width, :height, :unit
   def initialize width, height, unit
     @width, @height, @unit = width, height, unit
+
+    @b = width  / unit
 
     cells = (height / unit) * (width / unit)
 
@@ -18,8 +21,7 @@ class SpatialHash < Array
 
     x = x.to_i / unit
     y = y.to_i / unit
-    b = width  / unit
-    y * b + x
+    y * @b + x
   end
 
   def [] x, y = nil
@@ -54,46 +56,52 @@ class TestZombies < MiniTest::Unit::TestCase
 end
 
 class TestSpatialHash < MiniTest::Unit::TestCase
-  attr_accessor :p, :h, :sw, :sh, :u
+  attr_accessor :person, :h, :sw, :sh, :u
 
   def setup
     srand 0
-    @p = Person.new nil, 77, 82
-    @sw, @sh = Gosu.screen_width, Gosu.screen_height
-    @u = 80
+    @sw, @sh, @u = 800, 600, 50
+    @person = Person.new nil, @u-2, @u-2
+
     @h = SpatialHash.new @sw, @sh, @u
   end
 
   def test_prototype
-    h[p.tl] << p
-    h[p.tr] << p
-    h[p.bl] << p
-    h[p.br] << p
+    h[person.tl] << person
+    h[person.tr] << person
+    h[person.bl] << person
+    h[person.br] << person
 
-    assert_equal [p], h[p.tl].to_a
-    assert_equal [p], h[p.tr].to_a
-    assert_equal [p], h[p.bl].to_a
-    assert_equal [p], h[p.br].to_a
+    assert_equal [person], h[person.tl].to_a
+    assert_equal [person], h[person.tr].to_a
+    assert_equal [person], h[person.bl].to_a
+    assert_equal [person], h[person.br].to_a
   end
 
   def test_key
-    assert_equal   0, h.key(*p.tl)
-    assert_equal   1, h.key(*p.tr)
-    assert_equal  16, h.key(*p.bl)
-    assert_equal  17, h.key(*p.br)
-    assert_equal 159, h.key(1281, 801)
+    assert_equal [43, 43], person.tl
+    assert_equal [53, 43], person.tr
+    assert_equal [43, 53], person.bl
+    assert_equal [53, 53], person.br
+
+    assert_equal   0, h.key(*person.tl)
+    assert_equal   1, h.key(*person.tr)
+    assert_equal  16, h.key(*person.bl)
+    assert_equal  17, h.key(*person.br)
+    assert_equal 191, h.key(801, 601)
   end
 
   def test_sanity
-    assert_in_delta 14.142, Gosu.distance(0, 0, 10, 10)
-
     srand 0
 
-    people = (0...10_000).map { Person.new nil, rand(sw), rand(sh) }
+    @sw, @sh, @u = 40, 30, 10
+    @h = SpatialHash.new @sw, @sh, @u
+
+    people = (0...100).map { Person.new nil, rand(sw), rand(sh) }
 
     x = people.map { |op| [op.x, op.y] }
 
-    assert_equal([[684, 559], [1216, 763], [1033, 723], [599, 70], [314, 705]],
+    assert_equal([[0, 3], [3, 7], [19, 21], [36, 23], [24, 24]],
                  x.first(5))
 
     people.each do |op|
@@ -107,11 +115,66 @@ class TestSpatialHash < MiniTest::Unit::TestCase
     neighbors = h[op.tl] - [op] + h[op.tr] + h[op.bl] + h[op.br] - [op]
     visible   = neighbors.find_all { |oop| op - oop < op.sight }
 
-    assert_equal  1, op.x
-    assert_equal 23, op.y
+    assert_equal  0, op.x
+    assert_equal 3, op.y
     assert_equal 50, op.sight
-    assert_equal 82, h[0,0].size
-    assert_equal 81, neighbors.size
-    assert_equal 38, visible.size
+    assert_equal 27, h[0,0].size # TODO: check this, seems high.
+    assert_equal 26, neighbors.size
+    assert_equal 26, visible.size
+
+    new = people.map { |op|
+      neighbors = h[op.tl] - [op] + h[op.tr] + h[op.bl] + h[op.br] - [op]
+      visible   = neighbors.find_all { |oop| op - oop < op.sight }
+      touching  = visible.find_all { |oop| op.touching? oop }
+      touching.size
+    }
+
+    old = people.map { |op|
+      visible  = people.find_all { |oop| op - oop < op.sight } - [op]
+      touching = visible.find_all { |oop| op.touching? oop }
+      touching.size
+    }
+
+    assert_equal old, new
+  end
+
+  attr_accessor :people
+
+  def self.bench_range
+    bench_linear 100, 1000, 100
+  end
+
+  def setup_bench n
+    @people = (0...n).map { Person.new nil, rand(sw), rand(sh) }
+
+    people.each do |op|
+      h[op.tl] << op
+      h[op.tr] << op
+      h[op.bl] << op
+      h[op.br] << op
+    end
+  end
+
+  def bench_spatial_hash_old
+    assert_performance_power 0.95 do |n|
+      setup_bench n
+
+      people.each do |op|
+        visible  = people.find_all { |oop| op - oop < op.sight } - [op]
+        touching = visible.find_all { |oop| op.touching? oop }
+      end
+    end
+  end
+
+  def bench_spatial_hash_new
+    assert_performance_power 0.95 do |n|
+      setup_bench n
+
+      people.each do |op|
+        neighbors = h[op.tl] - [op] + h[op.tr] + h[op.bl] + h[op.br] - [op]
+        visible   = neighbors.find_all { |oop| op - oop < op.sight }
+        touching  = visible.find_all { |oop| op.touching? oop }
+      end
+    end
   end
 end
