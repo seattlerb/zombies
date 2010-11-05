@@ -24,12 +24,12 @@ class Zombies < Gosu::Window
   attr_accessor :paused
   alias :paused? :paused
 
-  def self.run
-    window = Zombies.new
+  def self.run n = nil
+    window = Zombies.new n
     window.show
   end
 
-  def initialize
+  def initialize n = nil
     @t0 = Gosu.milliseconds
     @fps = FPSCounter.new
     @people, @humans = [], []
@@ -39,7 +39,7 @@ class Zombies < Gosu::Window
 
     self.caption = "Zombie Epidemic Simulator"
 
-    PEOPLE.times do
+    (n || PEOPLE).to_i.times do
       people << Person.new(self)
     end
 
@@ -160,14 +160,34 @@ class Person
   end
 
   def update
+    update_neighbors
+    change_direction
+    move
+    attack
+  end
+
+  def update_neighbors
+  end
+
+  def change_direction
     if panicked? then
       panic
     else
       self.a += rand(da) - da2
-      self.a = Gosu::angle(x, y, window.width/2, window.height/2) if near_edge?
+      move_away_from_wall if near_edge?
     end
+  end
 
-    move
+  def attack
+  end
+
+  def hunt
+    closest = neighbors.first
+    self.a = Gosu::angle(x, y, closest.x, closest.y)
+  end
+
+  def move_away_from_wall
+    self.a = Gosu::angle(x, y, window.width/2, window.height/2)
   end
 
   def panic
@@ -262,27 +282,23 @@ module Zombie
     visible.each { |op| op.panic! } # FIX: this should be pull, not push
 
     self.neighbors.replace visible.find_all { |op|
-      # not Zombie === op and
       self - op < self.sight # think "smell"
     }.sort_by { |op| self - op }
   end
 
-  def update
-    update_neighbors
-
+  def change_direction
     if neighbors.empty? then
       self.a += rand(da) - da2
     else
-      neighbors.each do |op|
-        break unless touching? op
-        op.infect!
-      end
-
-      closest = neighbors.first
-      self.a = Gosu::angle(x, y, closest.x, closest.y)
+      hunt
     end
+  end
 
-    move
+  def attack
+    neighbors.each do |op|
+      break unless touching? op
+      op.infect!
+    end
   end
 
   def sight # more like smell
@@ -335,29 +351,26 @@ module Priest
       sort_by { |op| self - op }
   end
 
-  def update
-    update_neighbors
-
+  def change_direction
     if neighbors.empty? then
       self.a =
         if near_edge? then
-          Gosu::angle(x, y, window.width/2, window.height/2)
+          move_away_from_wall
         elsif op = window.priests(self) { |op| self - op < self.sight }.first
           Gosu::angle(op.x, op.y, x, y)
         else
           self.a + rand(da) - da2
         end
     else
-      closest = neighbors.first
-      self.a = Gosu::angle(x, y, closest.x, closest.y)
+      hunt
     end
+  end
 
+  def attack
     neighbors.each do |op|
       break unless touching? op
       window.people.delete op
     end
-
-    move
   end
 
   def inspect
