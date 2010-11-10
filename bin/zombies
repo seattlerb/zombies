@@ -6,4 +6,4 @@ ENV['GEM_PATH'] = dir if File.directory? dir
 require 'rubygems'
 require 'zombies'
 
-Zombies.run
+Zombies.run ARGV.shift

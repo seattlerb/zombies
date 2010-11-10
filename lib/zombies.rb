@@ -4,9 +4,9 @@ class Zombies < Gosu::Window
   VERSION = '1.0.0'
 
   if $DEBUG then
-    W, H, FULL = 800, 600, false
+    W, H, FULL, U = 800, 600, false, 50
   else
-    W, H, FULL = Gosu::screen_width, Gosu::screen_height, true
+    W, H, FULL, U = Gosu::screen_width, Gosu::screen_height, true, 80
   end
 
   # Tweakables:
@@ -17,7 +17,7 @@ class Zombies < Gosu::Window
   BULLY_LIMIT  = 5
   PERSON_SIGHT = 50
   ZOMBIE_SIGHT = 40
-  PRIEST_SIGHT = 100
+  PRIEST_SIGHT = 2*U
 
   attr_reader :people
   attr_reader :humans
@@ -30,6 +30,8 @@ class Zombies < Gosu::Window
   end
 
   def initialize n = nil
+    srand 42 if $DEBUG
+
     @t0 = Gosu.milliseconds
     @fps = FPSCounter.new
     @people, @humans = [], []
@@ -93,6 +95,15 @@ class Zombies < Gosu::Window
   end
 
   def draw
+    if $DEBUG then
+      c = Gosu::Color::DK_GRAY
+      (0..W).step(U) do |x|
+        draw_line x, 0, c, x, H, c
+      end
+      (0..H).step(U) do |y|
+        draw_line 0, y, c, W, y, c
+      end
+    end
     people.each do |person|
       person.draw
     end
@@ -126,6 +137,9 @@ class Person
   W, H, V, DA = 10, 10, 2, 30
   W2, H2, DA2 = W/2, H/2, DA/2
 
+  W_MIN, W_MAX = W2, Zombies::W - W2 - 1
+  H_MIN, H_MAX = H2, Zombies::H - H2 - 1
+
   attr_reader :window
   attr_accessor :x, :y, :v, :a, :neighbors, :panicked
   attr_accessor :chases
@@ -137,8 +151,11 @@ class Person
     @neighbors = []
     @chases = 0
 
-    self.x = x || rand(window.width)
-    self.y = y || rand(window.height)
+    # for 800 I want (6 .. 794)
+    # or:            (0 .. 800 - W - 2) + 5 + 1
+
+    self.x = x || rand(window.width  - W - 2) + W2 + 1
+    self.y = y || rand(window.height - H - 2) + H2 + 1
 
     self.v, self.a = V, rand(360)
   end
@@ -155,8 +172,8 @@ class Person
 
   def move
     dx, dy = Gosu.offset_xy a, v
-    self.x = (x + dx).limit_to(0, window.width  - w2)
-    self.y = (y + dy).limit_to(0, window.height - h2)
+    self.x = (x + dx).limit_to(W_MIN, W_MAX)
+    self.y = (y + dy).limit_to(H_MIN, H_MAX)
   end
 
   def update
@@ -201,7 +218,7 @@ class Person
   end
 
   def draw_sight
-    window.draw_circle x, y, sight, Gosu::Color::GRAY
+    window.draw_circle x, y, sight, Gosu::Color::GRAY, 0
   end
 
   def - o
@@ -244,10 +261,7 @@ class Person
   def br; [r, b]; end
 
   def near_edge?
-    ( l < w2 or
-      t < h2 or
-      r > window.width - w2 or
-      b > window.height - h2 )
+    x <= W_MIN or y <= H_MIN or x >= W_MAX or y >= H_MAX
   end
 
   def color
@@ -380,13 +394,14 @@ end
 
 class Numeric
   def limit_to min, max
-    [min, [self, max].min].max
+    self < min ? min : self > max ? max : self
   end
 end
 
 module Gosu
   Color::PURPLE     = Gosu::Color.new 0xFF7A00BE
   Color::DARK_GREEN = Gosu::Color.new 0xff006600
+  Color::DK_GRAY    = Gosu::Color.new 0xff333333
 
   def self.offset_xy a, r
     return Gosu::offset_x(a, r), Gosu::offset_y(a, r)
@@ -400,15 +415,32 @@ module Gosu
                 x2, y2, c)
     end
 
-    def draw_circle x, y, r, c
-      xx, yy = Gosu.offset_xy 0, r
+    require 'inline'
+    inline :C do |b|
+      b.add_compile_flags "-x c++"
+      b.add_compile_flags "-Igosu-0.7.25"
+      b.add_compile_flags "-I/usr/local/Cellar/boost/1.44.0/include"
+      b.include '"Gosu/Gosu.hpp"'
 
-      (0..360).step(20) do |a|
-        next if a == 0
-        dx, dy = Gosu.offset_xy a, r
-        draw_line x+xx, y+yy, c, x+dx, y+dy, c
-        xx, yy = dx, dy
-      end
+      b.c <<-EOC
+        void draw_circle(double x, double y, double r, VALUE c, int z) {
+          Gosu::AlphaMode mode = Gosu::amDefault;
+          Gosu::Window * w;
+          Gosu::Color * xc;
+          double dx, dy, xx = 0, yy = -r, da = 290 / r + 4.5;
+
+          Data_Get_Struct(self, Gosu::Window, w);
+          Data_Get_Struct(   c, Gosu::Color, xc);
+
+          for (double a = da, max = 360.0 + da; a <= max; a += da) {
+            dx = Gosu::offsetX(a, r);
+            dy = Gosu::offsetY(a, r);
+            w->graphics().drawLine(x+xx, y+yy, *xc, x+dx, y+dy, *xc, z, mode);
+            xx = dx;
+            yy = dy;
+          }
+        }
+      EOC
     end
   end
 end
