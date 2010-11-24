@@ -371,7 +371,7 @@ module Priest
       self.a =
         if near_edge? then
           move_away_from_wall
-        elsif op = window.priests(self) { |op| self - op < self.sight }.first
+        elsif op = window.priests(self) { |oop| self - oop < self.sight }.first
           Gosu::angle(op.x, op.y, x, y)
         else
           self.a + rand(da) - da2
@@ -443,6 +443,41 @@ module Gosu
         }
       EOC
     end
+  end
+end
+
+require 'set'
+
+class SpatialHash < Array
+  attr_reader :width, :height, :unit
+  def initialize width, height, unit
+    @width, @height, @unit = width, height, unit
+
+    @b = width  / unit
+
+    cells = (height / unit) * (width / unit)
+
+    super(cells) { Set.new }
+  end
+
+  def clear
+    each { |set| set.clear }
+  end
+
+  def key x, y
+    x = x.limit_to(0, width - 1)
+    y = y.limit_to(0, height - 1)
+
+    raise "bad x #{x}" if x >= @width
+    raise "bad y #{y}" if y >= @height
+
+    x = x.to_i / unit
+    y = y.to_i / unit
+    y * @b + x
+  end
+
+  def [] p
+    at key(*p)
   end
 end
 

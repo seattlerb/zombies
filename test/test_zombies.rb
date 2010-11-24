@@ -1,35 +1,6 @@
 require "minitest/autorun"
 require "minitest/benchmark" if ENV['BENCH']
 require "zombies"
-require "set"
-
-class SpatialHash < Array
-  attr_reader :width, :height, :unit
-  def initialize width, height, unit
-    @width, @height, @unit = width, height, unit
-
-    @b = width  / unit
-
-    cells = (height / unit) * (width / unit)
-
-    super(cells) { Set.new }
-  end
-
-  def key x, y
-    x = x.limit_to(0, width - 1)
-    y = y.limit_to(0, height - 1)
-
-    x = x.to_i / unit
-    y = y.to_i / unit
-    y * @b + x
-  end
-
-  def [] x, y = nil
-    x, y = *x unless y
-    raise ArgumentError, "need x,y or [x,y]" unless y
-    at key(x, y)
-  end
-end
 
 class TestZombies < MiniTest::Unit::TestCase
   attr_accessor :p
@@ -111,14 +82,15 @@ class TestSpatialHash < MiniTest::Unit::TestCase
       h[op.br] << op
     end
 
-    op        = h[0,0].sort_by { |oop| [oop.x, oop.y] }.first
+    zero = [0, 0]
+    op        = h[zero].sort_by { |oop| [oop.x, oop.y] }.first
     neighbors = h[op.tl] - [op] + h[op.tr] + h[op.bl] + h[op.br] - [op]
     visible   = neighbors.find_all { |oop| op - oop < op.sight }
 
     assert_equal  0, op.x
     assert_equal 3, op.y
     assert_equal 50, op.sight
-    assert_equal 27, h[0,0].size # TODO: check this, seems high.
+    assert_equal 27, h[zero].size # TODO: check this, seems high.
     assert_equal 26, neighbors.size
     assert_equal 26, visible.size
 
@@ -146,17 +118,10 @@ class TestSpatialHash < MiniTest::Unit::TestCase
 
   def setup_bench n
     @people = (0...n).map { Person.new nil, rand(sw), rand(sh) }
-
-    people.each do |op|
-      h[op.tl] << op
-      h[op.tr] << op
-      h[op.bl] << op
-      h[op.br] << op
-    end
   end
 
-  def bench_spatial_hash_old
-    assert_performance_power 0.95 do |n|
+  def bench_collision_detection_old
+    a, b, rr = assert_performance_power 0.95 do |n|
       setup_bench n
 
       people.each do |op|
@@ -164,6 +129,9 @@ class TestSpatialHash < MiniTest::Unit::TestCase
         touching = visible.find_all { |oop| op.touching? oop }
       end
     end
+
+    assert_in_epsilon 1.6e-6, a, 0.2
+    assert_in_epsilon 2.1,    b, 0.2
   end
 
   def bench_spatial_hash_new
@@ -171,10 +139,20 @@ class TestSpatialHash < MiniTest::Unit::TestCase
       setup_bench n
 
       people.each do |op|
+        h[op.tl] << op
+        h[op.tr] << op
+        h[op.bl] << op
+        h[op.br] << op
+      end
+
+      people.each do |op|
         neighbors = h[op.tl] - [op] + h[op.tr] + h[op.bl] + h[op.br] - [op]
         visible   = neighbors.find_all { |oop| op - oop < op.sight }
         touching  = visible.find_all { |oop| op.touching? oop }
       end
     end
+
+    assert_in_epsilon 4.6e-6, a, 0.2
+    assert_in_epsilon 1.7,    b, 0.2
   end
 end
