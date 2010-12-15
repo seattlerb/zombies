@@ -18,6 +18,7 @@ class Zombies < Gosu::Window
   PERSON_SIGHT = 50
   ZOMBIE_SIGHT = 40
   PRIEST_SIGHT = 2*U
+  PRIEST_HP    = 50
 
   attr_reader :people
   attr_reader :humans
@@ -355,7 +356,7 @@ module Priest
   end
 
   def infect!
-    @hp ||= 50
+    @hp ||= Zombies::PRIEST_HP
     @hp -= 1
     super if @hp == 0
   end
